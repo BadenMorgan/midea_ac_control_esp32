@@ -2,16 +2,29 @@
 #include "./wifi_config.h"
 #include <ESPAsync_WiFiManager.h>
 #include <NTPClient.h>
-#include <WiFiUdp.h>
+#include <AsyncElegantOTA.h>
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "za.pool.ntp.org", 2*60*60);
 
 #define TRIGGER_PIN 0
 
+#define TIME_ON_DEPTHS  2
+#define TIME_OFF_DEPTHS 2
+#define TIMES_VALUES 3
+
+uint8_t timesOn[TIME_ON_DEPTHS][TIMES_VALUES] = {{22,0,0}, {6,0,0}};
+uint8_t timesOff[TIME_OFF_DEPTHS][TIMES_VALUES] = {{23,30,0}, {7,30,0}};
+
+AsyncWebServer server(80);
+
 void setupWIFI(){
   ESP_LOGI(TAG, "Attempting to connect to wifi");
   WiFi.begin();
+  if (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    ESP_LOGD(TAG, "WiFi Failed!");
+    return;
+  }
 }
 
 void setupPins(){
@@ -23,6 +36,16 @@ void setupNTP(){
   timeClient.begin();
 }
 
+void setupOTA(){
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
+    request->send(200, "text/plain", "Hi! I am ESP32.");
+  });
+
+  AsyncElegantOTA.begin(&server);    // Start ElegantOTA
+  server.begin();
+  Serial.println("HTTP server started");
+}
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -30,12 +53,19 @@ void setup() {
   setupPins();
   setupWIFI();
   setupNTP();
+  setupOTA();
 }
 
 void checkIfConfigWifiActivated(){
   if ((digitalRead(TRIGGER_PIN) == LOW))
   {
-    ESP_LOGI(TAG, "\nConfiguration portal requested.");
+    ESP_LOGI(TAG, "Stopping server");
+    server.end();
+    delay(1000);
+    ESP_LOGI(TAG, "Disconnecting WIFI");
+    WiFi.disconnect();
+    delay(1000);
+    ESP_LOGI(TAG, "Configuration portal requested.");
     // turn the LED on by making the voltage LOW to tell us we are in configuration mode.
     digitalWrite(LED_BUILTIN, LED_ON);
 
@@ -127,13 +157,21 @@ void checkIfConfigWifiActivated(){
 }
 
 int wifiConnectAttempts = 0;
+bool comingFromDisconnect = false;
 void wifiLoop(){
   if(!WiFi.isConnected()){
+    comingFromDisconnect = true;
+    server.end();
     delay(1000);
     WiFi.begin();
     wifiConnectAttempts++;
   } else {
     wifiConnectAttempts = 0;
+  }
+
+  if(WiFi.isConnected() && comingFromDisconnect){
+    comingFromDisconnect = true;
+    setupOTA();
   }
 
   // if too many attempts take along break
@@ -161,10 +199,62 @@ void updateNTPTime(){
     timeClient.update();
   }
   // print time every seconds
+  #ifdef DEBUG_NTP
   if(millis() - updateStampDebug >= updateIntervalDebug){
     updateStampDebug = millis();
     ESP_LOGI(TAG, "Time: %s", timeClient.getFormattedTime().c_str());
   }
+  #endif
+}
+
+uint8_t hourTemp = 0;
+uint8_t minutesTemp = 0;
+bool alreadyTurnedOn = false;
+bool alreadyTurnedOff = false;
+uint32_t debugStamp = 0;
+void handleTimers(){
+  // grab time from time client
+  // only compare hours and minutes
+  uint8_t hours = hourTemp;//timeClient.getHours();
+  uint8_t minutes = minutesTemp;//timeClient.getMinutes();
+  // compare time to see if must call turn on
+  for(int i = 0; i < TIME_ON_DEPTHS; i++){
+    if(hours == timesOn[i][0] && minutes == timesOn[i][1]){
+      if(!alreadyTurnedOn){
+        alreadyTurnedOn = true;
+        ESP_LOGV(TAG, "Turn on time found: %i:%i", timesOn[i][0], timesOn[i][1]);
+      }
+    }else{
+      alreadyTurnedOn = false;
+    }
+  }
+  // compare time to see if must call turn off
+  for(int i = 0; i < TIME_OFF_DEPTHS; i++){
+    if(hours == timesOff[i][0] && minutes == timesOff[i][1]){
+      if(!alreadyTurnedOn){
+        alreadyTurnedOff = true;
+        ESP_LOGV(TAG, "Turn off time found: %i:%i", timesOff[i][0], timesOff[i][1]);
+      }
+    }else{
+      alreadyTurnedOff = false;
+    }
+  }
+  // debug timer
+  #ifdef DEBUG_TIMER_HANDLE
+  if(millis() - debugStamp >= 10){
+    debugStamp = millis();
+    minutesTemp++;
+    if(minutesTemp >= 60){
+      hourTemp++;
+      minutesTemp = 0;
+    }
+    if(hourTemp >= 24){
+      hourTemp = 0;
+      minutesTemp = 0;
+    }
+    ESP_LOGV(TAG, "MOCK TIME: %i:%i", hourTemp, minutesTemp);
+  }
+  #endif
 }
 
 void loop() {
@@ -172,4 +262,7 @@ void loop() {
   checkIfConfigWifiActivated();
   wifiLoop();
   updateNTPTime();
+  handleTimers();
+  vTaskDelay(1);
+  
 }

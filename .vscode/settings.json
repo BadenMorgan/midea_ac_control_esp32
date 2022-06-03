@@ -1,12 +1,16 @@
 {
     "cSpell.words": [
+        "ACNTRL",
         "AUTOCONNECT",
         "CNTR",
         "EEPROM",
         "Efuse",
         "LITTLEFS",
+        "LOGD",
         "LOGERROR",
         "LOGI",
+        "LOGV",
+        "MDNS",
         "Midea",
         "millis",
         "SSID",
