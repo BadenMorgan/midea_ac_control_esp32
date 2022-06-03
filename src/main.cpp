@@ -38,7 +38,7 @@ void setupNTP(){
 
 void setupOTA(){
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-    request->send(200, "text/plain", "Hi! I am ESP32.");
+    request->send(200, "text/plain", "Hi! This is the MIDEA AC Controller.\nGo to /update to update this device using a binary");
   });
 
   AsyncElegantOTA.begin(&server);    // Start ElegantOTA
