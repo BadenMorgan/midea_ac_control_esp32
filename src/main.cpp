@@ -7,6 +7,17 @@
 #include <SinricPro.h>
 #include <SinricProWindowAC.h>
 
+#ifndef APP_KEY
+#warning Add definitions for APP_KEY
+#endif
+#ifndef APP_SECRET
+#warning Add definitions for APP_SECRET
+#endif
+#ifndef AC_ID
+#warning Add definitions for AC_ID
+#endif
+
+
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "za.pool.ntp.org", 2*60*60);
 
@@ -49,6 +60,60 @@ void setupOTA(){
   Serial.println("HTTP server started");
 }
 
+float globalTemperature;
+bool globalPowerState;
+int globalFanSpeed;
+
+bool onPowerState(const String &deviceId, bool &state) {
+  Serial.printf("Thermostat %s turned %s\r\n", deviceId.c_str(), state?"on":"off");
+  globalPowerState = state; 
+  return true; // request handled properly
+}
+
+bool onTargetTemperature(const String &deviceId, float &temperature) {
+  Serial.printf("Thermostat %s set temperature to %f\r\n", deviceId.c_str(), temperature);
+  globalTemperature = temperature;
+  return true;
+}
+
+bool onAdjustTargetTemperature(const String & deviceId, float &temperatureDelta) {
+  globalTemperature += temperatureDelta;  // calculate absolut temperature
+  Serial.printf("Thermostat %s changed temperature about %f to %f", deviceId.c_str(), temperatureDelta, globalTemperature);
+  temperatureDelta = globalTemperature; // return absolute temperature
+  return true;
+}
+
+bool onThermostatMode(const String &deviceId, String &mode) {
+  Serial.printf("Thermostat %s set to mode %s\r\n", deviceId.c_str(), mode.c_str());
+  return true;
+}
+
+bool onRangeValue(const String &deviceId, int &rangeValue) {
+  Serial.printf("Fan speed set to %d\r\n", rangeValue);
+  globalFanSpeed = rangeValue;
+  return true;
+}
+
+bool onAdjustRangeValue(const String &deviceId, int &valueDelta) {
+  globalFanSpeed += valueDelta;
+  Serial.printf("Fan speed changed about %d to %d\r\n", valueDelta, globalFanSpeed);
+  valueDelta = globalFanSpeed;
+  return true;
+}
+
+void setupSinric(){
+  SinricProWindowAC& myAcUnit = SinricPro[AC_ID];
+  // set callback function
+  myAcUnit.onPowerState(onPowerState);
+  myAcUnit.onTargetTemperature(onTargetTemperature);
+  myAcUnit.onAdjustTargetTemperature(onAdjustTargetTemperature);
+  myAcUnit.onThermostatMode(onThermostatMode);
+  myAcUnit.onRangeValue(onRangeValue);
+  myAcUnit.onAdjustRangeValue(onAdjustRangeValue);
+  // startup SinricPro
+  SinricPro.begin(APP_KEY, APP_SECRET);
+}
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(115200);
@@ -57,9 +122,6 @@ void setup() {
   setupWIFI();
   setupNTP();
   setupOTA();
-  Serial.println(APP_KEY);
-  Serial.println(APP_SECRET);
-  Serial.println(AC_ID);
 }
 
 void checkIfConfigWifiActivated(){
@@ -269,6 +331,6 @@ void loop() {
   wifiLoop();
   updateNTPTime();
   handleTimers();
-  vTaskDelay(1);
-  
+  SinricPro.handle();
+  vTaskDelay(1);  
 }
