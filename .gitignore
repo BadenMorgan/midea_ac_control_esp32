@@ -37,3 +37,4 @@
 .vscode/launch.json
 .vscode/ipch
 
+src/sinric_config.h
