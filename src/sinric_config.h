@@ -1,0 +1,3 @@
+#define APP_KEY    "YOUR-APP-KEY"
+#define APP_SECRET "YOUR-APP-SECRET"
+#define AC_ID  "YOUR-DEVICE-ID"

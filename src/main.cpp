@@ -1,8 +1,11 @@
 #include <Arduino.h>
 #include "./wifi_config.h"
+#include "./sinric_config.h"
 #include <ESPAsync_WiFiManager.h>
 #include <NTPClient.h>
 #include <AsyncElegantOTA.h>
+#include <SinricPro.h>
+#include <SinricProWindowAC.h>
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "za.pool.ntp.org", 2*60*60);
@@ -54,6 +57,9 @@ void setup() {
   setupWIFI();
   setupNTP();
   setupOTA();
+  Serial.println(APP_KEY);
+  Serial.println(APP_SECRET);
+  Serial.println(AC_ID);
 }
 
 void checkIfConfigWifiActivated(){
