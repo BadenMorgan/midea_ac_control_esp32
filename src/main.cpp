@@ -6,6 +6,7 @@
 #include <AsyncElegantOTA.h>
 #include <SinricPro.h>
 #include <SinricProWindowAC.h>
+#include <midea_ir.h>
 
 #ifndef APP_KEY
 #warning Add definitions for APP_KEY
@@ -31,6 +32,11 @@ uint8_t timesOn[TIME_ON_DEPTHS][TIMES_VALUES] = {{22,0,0}, {6,0,0}};
 uint8_t timesOff[TIME_OFF_DEPTHS][TIMES_VALUES] = {{23,30,0}, {7,30,0}};
 
 AsyncWebServer server(80);
+
+const uint8_t MIDEA_RMT_CHANNEL = 0;
+const uint8_t MIDEA_TX_PIN = 4;
+
+MideaIR ir;
 
 void setupWIFI(){
   ESP_LOGI(TAG, "Attempting to connect to wifi");
@@ -60,58 +66,85 @@ void setupOTA(){
   Serial.println("HTTP server started");
 }
 
-float globalTemperature;
-bool globalPowerState;
-int globalFanSpeed;
+void setupMideaRMT()
+{
+    midea_ir_init(&ir, MIDEA_RMT_CHANNEL, MIDEA_TX_PIN);
+    ESP_LOGI(TAG, "Setting up AC");
+    // init library
+    ir.enabled = false;
+    ir.mode = MODE_HEAT;
+    ir.fan_level = 3;
+    ir.temperature = 30;
+}
+
+void toggleAC(bool state){
+  ir.enabled = state; 
+  ESP_LOGI(TAG, "Turning %s AC", state?"on":"off");
+  midea_ir_send(&ir);
+  delay(5000);
+  if(state){
+    ESP_LOGI(TAG, "Turning on swivel mode");
+    midea_ir_oscilate();
+  }
+}
 
 bool onPowerState(const String &deviceId, bool &state) {
   Serial.printf("Thermostat %s turned %s\r\n", deviceId.c_str(), state?"on":"off");
-  globalPowerState = state; 
+  // send the IR signal which will turn the A/C off
+  toggleAC(state);
   return true; // request handled properly
 }
 
 bool onTargetTemperature(const String &deviceId, float &temperature) {
   Serial.printf("Thermostat %s set temperature to %f\r\n", deviceId.c_str(), temperature);
-  globalTemperature = temperature;
-  return true;
-}
-
-bool onAdjustTargetTemperature(const String & deviceId, float &temperatureDelta) {
-  globalTemperature += temperatureDelta;  // calculate absolut temperature
-  Serial.printf("Thermostat %s changed temperature about %f to %f", deviceId.c_str(), temperatureDelta, globalTemperature);
-  temperatureDelta = globalTemperature; // return absolute temperature
+  ir.temperature = int(temperature);
+  if(ir.temperature > 30){
+    ir.temperature = 30;
+  }
+  if (ir.temperature < 17){
+    ir.temperature = 17;
+  }
   return true;
 }
 
 bool onThermostatMode(const String &deviceId, String &mode) {
   Serial.printf("Thermostat %s set to mode %s\r\n", deviceId.c_str(), mode.c_str());
+  if(mode == "COOL"){
+    ir.mode = MODE_COOL;
+  }
+  if(mode == "AUTO"){
+    ir.mode = MODE_AUTO;
+  }
+  if(mode == "HEAT"){
+    ir.mode = MODE_HEAT;
+  }
+  if(mode == "ECO"){
+    ir.mode = MODE_VENTILATE;
+  }
   return true;
 }
 
 bool onRangeValue(const String &deviceId, int &rangeValue) {
   Serial.printf("Fan speed set to %d\r\n", rangeValue);
-  globalFanSpeed = rangeValue;
+  ir.fan_level = rangeValue;
+  if(ir.fan_level > 3){
+    ir.fan_level = 3;
+  }
   return true;
 }
 
-bool onAdjustRangeValue(const String &deviceId, int &valueDelta) {
-  globalFanSpeed += valueDelta;
-  Serial.printf("Fan speed changed about %d to %d\r\n", valueDelta, globalFanSpeed);
-  valueDelta = globalFanSpeed;
-  return true;
-}
+
 
 void setupSinric(){
   SinricProWindowAC& myAcUnit = SinricPro[AC_ID];
   // set callback function
   myAcUnit.onPowerState(onPowerState);
   myAcUnit.onTargetTemperature(onTargetTemperature);
-  myAcUnit.onAdjustTargetTemperature(onAdjustTargetTemperature);
   myAcUnit.onThermostatMode(onThermostatMode);
   myAcUnit.onRangeValue(onRangeValue);
-  myAcUnit.onAdjustRangeValue(onAdjustRangeValue);
   // startup SinricPro
   SinricPro.begin(APP_KEY, APP_SECRET);
+  ESP_LOGI(TAG, "SINRIC SETUP");
 }
 
 void setup() {
@@ -122,6 +155,8 @@ void setup() {
   setupWIFI();
   setupNTP();
   setupOTA();
+  setupMideaRMT();
+  setupSinric();
 }
 
 void checkIfConfigWifiActivated(){
@@ -291,6 +326,10 @@ void handleTimers(){
       if(!alreadyTurnedOn){
         alreadyTurnedOn = true;
         ESP_LOGV(TAG, "Turn on time found: %i:%i", timesOn[i][0], timesOn[i][1]);
+        ir.fan_level = 1;
+        ir.temperature =30;
+        ir.mode = MODE_HEAT;
+        toggleAC(true);
       }
     }else{
       alreadyTurnedOn = false;
@@ -302,27 +341,12 @@ void handleTimers(){
       if(!alreadyTurnedOn){
         alreadyTurnedOff = true;
         ESP_LOGV(TAG, "Turn off time found: %i:%i", timesOff[i][0], timesOff[i][1]);
+        toggleAC(false);
       }
     }else{
       alreadyTurnedOff = false;
     }
   }
-  // debug timer
-  #ifdef DEBUG_TIMER_HANDLE
-  if(millis() - debugStamp >= 10){
-    debugStamp = millis();
-    minutesTemp++;
-    if(minutesTemp >= 60){
-      hourTemp++;
-      minutesTemp = 0;
-    }
-    if(hourTemp >= 24){
-      hourTemp = 0;
-      minutesTemp = 0;
-    }
-    ESP_LOGV(TAG, "MOCK TIME: %i:%i", hourTemp, minutesTemp);
-  }
-  #endif
 }
 
 void loop() {
