@@ -38,8 +38,10 @@ const uint8_t MIDEA_TX_PIN = 4;
 
 MideaIR ir;
 
+String hostname = "ESP32 AC Controller";
 void setupWIFI(){
   ESP_LOGI(TAG, "Attempting to connect to wifi");
+  WiFi.setHostname(hostname.c_str());
   WiFi.begin();
   if (WiFi.waitForConnectResult() != WL_CONNECTED) {
     ESP_LOGD(TAG, "WiFi Failed!");
@@ -318,8 +320,8 @@ uint32_t debugStamp = 0;
 void handleTimers(){
   // grab time from time client
   // only compare hours and minutes
-  uint8_t hours = hourTemp;//timeClient.getHours();
-  uint8_t minutes = minutesTemp;//timeClient.getMinutes();
+  uint8_t hours = timeClient.getHours();
+  uint8_t minutes = timeClient.getMinutes();
   // compare time to see if must call turn on
   for(int i = 0; i < TIME_ON_DEPTHS; i++){
     if(hours == timesOn[i][0] && minutes == timesOn[i][1]){
