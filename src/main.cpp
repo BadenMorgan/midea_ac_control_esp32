@@ -84,7 +84,7 @@ void toggleAC(bool state){
   ESP_LOGI(TAG, "Turning %s AC", state?"on":"off");
   midea_ir_send(&ir);
   delay(5000);
-  if(state){
+  if(state == true){
     ESP_LOGI(TAG, "Turning on swivel mode");
     midea_ir_oscilate();
   }
@@ -285,78 +285,10 @@ void wifiLoop(){
   }
 }
 
-// timer stamps
-uint32_t updateStamp = 0;
-const uint32_t updateInterval = 60*1000;
-// debug stamps
-uint32_t updateStampDebug = 0;
-const uint32_t updateIntervalDebug = 1000;
-// first update may need to be forced
-bool firstUpdateSuccess = false;
-void updateNTPTime(){
-  // if there has been no update since boot, force an update
-  if(!firstUpdateSuccess){
-    firstUpdateSuccess = timeClient.update();
-  }
-  // update only eveery 60 seconds
-  if(millis() - updateStamp >= updateInterval){
-    updateStamp = millis();
-    timeClient.update();
-  }
-  // print time every seconds
-  #ifdef DEBUG_NTP
-  if(millis() - updateStampDebug >= updateIntervalDebug){
-    updateStampDebug = millis();
-    ESP_LOGI(TAG, "Time: %s", timeClient.getFormattedTime().c_str());
-  }
-  #endif
-}
-
-uint8_t hourTemp = 0;
-uint8_t minutesTemp = 0;
-bool alreadyTurnedOn = false;
-bool alreadyTurnedOff = false;
-uint32_t debugStamp = 0;
-void handleTimers(){
-  // grab time from time client
-  // only compare hours and minutes
-  uint8_t hours = timeClient.getHours();
-  uint8_t minutes = timeClient.getMinutes();
-  // compare time to see if must call turn on
-  for(int i = 0; i < TIME_ON_DEPTHS; i++){
-    if(hours == timesOn[i][0] && minutes == timesOn[i][1]){
-      if(!alreadyTurnedOn){
-        alreadyTurnedOn = true;
-        ESP_LOGV(TAG, "Turn on time found: %i:%i", timesOn[i][0], timesOn[i][1]);
-        ir.fan_level = 1;
-        ir.temperature =30;
-        ir.mode = MODE_HEAT;
-        toggleAC(true);
-      }
-    }else{
-      alreadyTurnedOn = false;
-    }
-  }
-  // compare time to see if must call turn off
-  for(int i = 0; i < TIME_OFF_DEPTHS; i++){
-    if(hours == timesOff[i][0] && minutes == timesOff[i][1]){
-      if(!alreadyTurnedOn){
-        alreadyTurnedOff = true;
-        ESP_LOGV(TAG, "Turn off time found: %i:%i", timesOff[i][0], timesOff[i][1]);
-        toggleAC(false);
-      }
-    }else{
-      alreadyTurnedOff = false;
-    }
-  }
-}
-
 void loop() {
   // put your main code here, to run repeatedly:
   checkIfConfigWifiActivated();
   wifiLoop();
-  updateNTPTime();
-  handleTimers();
   SinricPro.handle();
   vTaskDelay(1);  
 }
